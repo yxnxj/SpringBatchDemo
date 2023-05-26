@@ -6,9 +6,14 @@ import com.example.batch.entity.DayOfWeek;
 import com.example.batch.processor.AlarmItemProcessor;
 import com.example.batch.processor.CoffeeItemProcessor;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobExecution;
+import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
@@ -23,14 +28,18 @@ import org.springframework.batch.item.file.mapping.BeanWrapperFieldSetMapper;
 import org.springframework.batch.item.file.transform.BeanWrapperFieldExtractor;
 import org.springframework.batch.item.file.transform.DelimitedLineAggregator;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionManager;
 
 import javax.sql.DataSource;
+import java.util.Date;
 
 @Configuration
 @RequiredArgsConstructor
@@ -39,6 +48,8 @@ public class BatchConfiguration {
     private final AlarmRepository alarmRepository;
     @Value("${file.input}")
     private String fileInput;
+
+    private static final Logger logger = LoggerFactory.getLogger(BatchConfiguration.class);
 
     @Bean
     public FlatFileItemReader<Coffee> coffeeReader() {
@@ -105,30 +116,48 @@ public class BatchConfiguration {
     public Job importUserJob(JobRepository jobRepository, JobCompletionNotificationListener listener, Step step1) {
         return new JobBuilder("importUserJob", jobRepository)
                  .incrementer(new RunIdIncrementer())
-                .listener(listener)
+//                .listener(listener)
                 .flow(step1)
                 .end()
                 .build();
     }
 
     @Bean
-    public Step step1(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
-        return new StepBuilder("step1", jobRepository)
+    public Step step(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+        return new StepBuilder("step", jobRepository)
                 .<DayOfWeek, Alarm> chunk(10, transactionManager)
                 .reader(reader())
-                .writer(new NoOpItemWriter())
+//                .writer(new NoOpItemWriter())
+                .writer(flatWriter())
                 .processor(alarmItemProcessor())
+                .allowStartIfComplete(true)
                 .build();
     }
 
-    @Bean
-    public Step step(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
-        return new StepBuilder("step", jobRepository)
-                .<Coffee, Coffee> chunk(10, transactionManager)
-                .reader(coffeeReader())
-                .writer(writer())
-                .processor(processor())
-                .build();
+    private final JobRepository jobRepository;
+    private final ApplicationContext applicationContext;
+    private final JobLauncher jobLauncher;
+
+    @Scheduled(cron = "0 33 22 * * *")
+    public void launchJob() throws Exception {
+        Date date = new Date();
+        logger.debug("scheduler starts at " + date);
+
+            JobExecution jobExecution = jobLauncher.run((Job)applicationContext.getBean("importUserJob"), new JobParametersBuilder().addDate("launchDate", date)
+                    .toJobParameters());
+//            batchRunCounter.incrementAndGet();
+            logger.debug("Batch job ends with status as " + jobExecution.getStatus());
+        logger.debug("scheduler ends ");
     }
+
+//    @Bean
+//    public Step step(JobRepository jobRepository, PlatformTransactionManager transactionManager) {
+//        return new StepBuilder("step", jobRepository)
+//                .<Coffee, Coffee> chunk(10, transactionManager)
+//                .reader(coffeeReader())
+//                .writer(writer())
+//                .processor(processor())
+//                .build();
+//    }
 
 }

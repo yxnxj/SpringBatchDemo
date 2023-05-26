@@ -5,6 +5,7 @@ import com.example.batch.entity.Alarm;
 import com.example.batch.entity.DayOfWeek;
 import lombok.RequiredArgsConstructor;
 import org.springframework.batch.item.ItemProcessor;
+import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.time.format.TextStyle;
